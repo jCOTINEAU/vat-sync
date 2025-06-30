@@ -6,6 +6,7 @@ on:
       - main
 
 permissions:
+  packages: write
   contents: write
 
 jobs:
@@ -34,14 +35,18 @@ jobs:
       - name: Build for Windows
         run: GOOS=windows GOARCH=amd64 go build -o bin/app-windows-amd64.exe .
 
+      - name: Generate Short SHA
+        id: generate_sha
+        run: echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
+
       - name: Create GitHub Release
         id: create_release
         uses: actions/create-release@v1
         with:
-          tag_name: ${{ github.sha }}
-          release_name: Release ${{ github.sha }}
-          draft: false
-          prerelease: false
+          release_name: Release ${{ steps.generate_sha.outputs.short_sha }}
+          tag_name: ${{ steps.generate_sha.outputs.short_sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Linux Binary
         uses: actions/upload-release-asset@v1
