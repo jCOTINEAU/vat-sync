@@ -24,16 +24,16 @@ jobs:
           go-version: '1.23'
 
       - name: Build for Linux
-        run: GOOS=linux GOARCH=amd64 go build -o bin/app-linux-amd64 .
+        run: GOOS=linux GOARCH=amd64 go build -o bin/vat-synchronize-linux-amd64 .
 
       - name: Build for macOS Intel
-        run: GOOS=darwin GOARCH=amd64 go build -o bin/app-darwin-amd64 .
+        run: GOOS=darwin GOARCH=amd64 go build -o bin/vat-synchronize-darwin-amd64 .
 
       - name: Build for macOS ARM
-        run: GOOS=darwin GOARCH=arm64 go build -o bin/app-darwin-arm64 .
+        run: GOOS=darwin GOARCH=arm64 go build -o bin/vat-synchronize-darwin-arm64 .
 
       - name: Build for Windows
-        run: GOOS=windows GOARCH=amd64 go build -o bin/app-windows-amd64.exe .
+        run: GOOS=windows GOARCH=amd64 go build -o bin/vat-synchronize-windows-amd64.exe .
 
       - name: Generate Short SHA
         id: generate_sha
@@ -52,8 +52,8 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: bin/app-linux-amd64
-          asset_name: app-linux-amd64
+          asset_path: bin/vat-synchronize-linux-amd64
+          asset_name: vat-synchronize-linux-amd64
           asset_content_type: application/octet-stream
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -62,8 +62,8 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: bin/app-darwin-amd64
-          asset_name: app-darwin-amd64
+          asset_path: bin/vat-synchronize-darwin-amd64
+          asset_name: vat-synchronize-darwin-amd64
           asset_content_type: application/octet-stream
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -72,8 +72,8 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: bin/app-darwin-arm64
-          asset_name: app-darwin-arm64
+          asset_path: bin/vat-synchronize-darwin-arm64
+          asset_name: vat-synchronize-darwin-arm64
           asset_content_type: application/octet-stream
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -82,8 +82,8 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: bin/app-windows-amd64.exe
-          asset_name: app-windows-amd64.exe
+          asset_path: bin/vat-synchronize-windows-amd64.exe
+          asset_name: vat-synchronize-windows-amd64.exe
           asset_content_type: application/octet-stream
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
