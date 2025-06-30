@@ -1,0 +1,96 @@
+{
+  "source_configurations": [
+    {
+      "edition": "datacenter-app",
+      "version": "2025.3.0",
+      "branch": "master",
+      "image_name": "sonarsource/sonarqube/sonarqube"
+    },
+    {
+      "edition": "datacenter-app",
+      "version": "2025.1.2",
+      "branch": "master",
+      "image_name": "sonarsource/sonarqube/sonarqube"
+    },
+    {
+      "edition": "datacenter-app",
+      "version": "10.8.1",
+      "branch": "master",
+      "image_name": "sonarsource/sonarqube/sonarqube"
+    }
+  ],
+  "target_configurations": [
+    {
+      "edition": "datacenter-search",
+      "version": "2025.1.2",
+      "branch": "development",
+      "image_name": "sonarsource/sonarqube/sonarqube"
+    },
+    {
+      "edition": "datacenter-app",
+      "version": "2025.1.2",
+      "branch": "development",
+      "image_name": "sonarsource/sonarqube/sonarqube"
+    },
+    {
+      "edition": "developer",
+      "version": "2025.1.2",
+      "branch": "development",
+      "image_name": "sonarsource/sonarqube/sonarqube"
+    },
+    {
+      "edition": "enterprise",
+      "version": "2025.1.2",
+      "branch": "development",
+      "image_name": "sonarsource/sonarqube/sonarqube"
+    },
+    {
+      "edition": "enterprise",
+      "version": "9.9.9",
+      "branch": "master",
+      "image_name": "sonarsource/sonarqube/sonarqube"
+    },
+    {
+      "edition": "datacenter-app",
+      "version": "9.9.9",
+      "branch": "master",
+      "image_name": "sonarsource/sonarqube/sonarqube"
+    },
+    {
+      "edition": "datacenter-search",
+      "version": "9.9.9",
+      "branch": "master",
+      "image_name": "sonarsource/sonarqube/sonarqube"
+    },
+    {
+      "edition": "developer",
+      "version": "9.9.8",
+      "branch": "master",
+      "image_name": "sonarsource/sonarqube/sonarqube"
+    },
+    {
+      "edition": "developer",
+      "version": "2025.3.1",
+      "branch": "master",
+      "image_name": "sonarsource/sonarqube/sonarqube"
+    },
+    {
+      "edition": "datacenter-search",
+      "version": "2025.3.1",
+      "branch": "master",
+      "image_name": "sonarsource/sonarqube/sonarqube"
+    },
+    {
+      "edition": "datacenter-app",
+      "version": "2025.3.1",
+      "branch": "master",
+      "image_name": "sonarsource/sonarqube/sonarqube"
+    },
+    {
+      "edition": "enterprise",
+      "version": "2025.3.1",
+      "branch": "master",
+      "image_name": "sonarsource/sonarqube/sonarqube"
+    }
+  ]
+}

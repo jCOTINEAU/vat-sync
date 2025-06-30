@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 )
 
 // CVE represents a Common Vulnerabilities and Exposures entry with its justification.
@@ -23,12 +25,19 @@ type CVE struct {
 // ensuring only one justification per CVE ID.
 type JustificationList map[string]CVE
 
-// SourceConfig defines a specific combination of edition, single version, and branch
-// from which justifications will be sourced.
+// SourceConfig defines a specific combination of edition, single version, branch, and now image name.
 type SourceConfig struct {
-	Edition string // The edition (e.g., "datacenter-app")
-	Version string // A single version for this edition (e.g., "1.0.0")
-	Branch  string // The branch (e.g., "master", "developer")
+	Edition   string `json:"edition"`    // The edition (e.g., "datacenter-app")
+	Version   string `json:"version"`    // A single version for this edition (e.g., "1.0.0")
+	Branch    string `json:"branch"`     // The branch (e.g., "master", "developer")
+	ImageName string `json:"image_name"` // The image name (e.g., "sonarsource/sonarqube/sonarqube")
+}
+
+// Configurations struct matches the overall structure of the JSON configuration file,
+// including both source and target configurations.
+type Configurations struct {
+	SourceConfigs []SourceConfig `json:"source_configurations"`
+	TargetConfigs []SourceConfig `json:"target_configurations"`
 }
 
 // ResponseWrapper is a wrapper struct to match the JSON structure from the API.
@@ -38,26 +47,27 @@ type ResponseWrapper struct {
 }
 
 // APIClient holds the common API configurations and HTTP client.
+// Note: ImageName is removed from here as it's now per SourceConfig.
 type APIClient struct {
-	Host      string
-	ImagePath string
-	ImageName string
-	Cookies   []*http.Cookie
+	Host       string
+	ImagePath  string
+	Cookies    []*http.Cookie
 	HTTPClient *http.Client
 }
 
 // NewAPIClient creates and returns a new APIClient.
-func NewAPIClient(host, imagePath, imageName string, cookies []*http.Cookie) *APIClient {
+// Note: imageName parameter is removed.
+func NewAPIClient(host, imagePath string, cookies []*http.Cookie) *APIClient {
 	return &APIClient{
-		Host:      host,
-		ImagePath: imagePath,
-		ImageName: imageName,
-		Cookies:   cookies,
+		Host:       host,
+		ImagePath:  imagePath,
+		Cookies:    cookies,
 		HTTPClient: &http.Client{},
 	}
 }
 
 // buildImageAPIURL constructs the URL for fetching image-related CVEs.
+// It now takes ImageName from the passed SourceConfig.
 func (c *APIClient) buildImageAPIURL(config SourceConfig) (string, error) {
 	u, err := url.Parse(c.Host + c.ImagePath)
 	if err != nil {
@@ -65,7 +75,7 @@ func (c *APIClient) buildImageAPIURL(config SourceConfig) (string, error) {
 	}
 
 	q := u.Query()
-	q.Set("imageName", c.ImageName)
+	q.Set("imageName", config.ImageName) // Get ImageName from the config parameter
 	q.Set("tag", fmt.Sprintf("%s-%s", config.Version, config.Edition))
 	q.Set("branch", config.Branch)
 	u.RawQuery = q.Encode()
@@ -91,7 +101,12 @@ func (c *APIClient) getJustificationsFromAPI(apiURL string) ([]CVE, string, erro
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("received non-OK HTTP status code: %d from %s", resp.StatusCode, apiURL)
+		// Read and print response body for more detailed error from API
+		bodyBytes, readErr := ioutil.ReadAll(resp.Body)
+		if readErr != nil {
+			return nil, "", fmt.Errorf("received non-OK HTTP status code: %d from %s, failed to read response body: %w", resp.StatusCode, apiURL, readErr)
+		}
+		return nil, "", fmt.Errorf("received non-OK HTTP status code: %d from %s. Response body: %s", resp.StatusCode, apiURL, string(bodyBytes))
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -122,19 +137,19 @@ func (c *APIClient) updateCVE(targetConfig SourceConfig, imageTagId string, cve,
 	u.RawQuery = q.Encode()
 	apiURL := u.String()
 
-	fmt.Printf("Updating CVE %s at %s\n", cve.CVEID, apiURL)
+	fmt.Printf("Updating CVE %s for image tag %s at %s\n", cve.CVEID, imageTagId, apiURL)
 
 	requestBody := map[string]interface{}{
 		"imageTagId": imageTagId,
 		"findings": []map[string]interface{}{
 			{
 				"findingId":         cve.FindingId,
-				"currentStatus":     cve.Status,
+				"currentStatus":     cve.Status, // Use current status from fetched CVE
 				"approvalStatus":    "Justified",
-				"justificationText": existingCVE.Justification,
+				"justificationText": existingCVE.Justification, // Use justification from master list
 				"approvalComment":   "",
 				"inheritable":       true,
-				"designator":        existingCVE.Designator,
+				"designator":        existingCVE.Designator, // Use designator from master list
 				"fixDateUnknown":    false,
 			},
 		},
@@ -163,7 +178,12 @@ func (c *APIClient) updateCVE(targetConfig SourceConfig, imageTagId string, cve,
 	if resp.StatusCode == http.StatusOK {
 		fmt.Printf("Successfully updated CVE %s.\n", cve.CVEID)
 	} else {
-		return fmt.Errorf("failed to update CVE %s, received status code: %d", cve.CVEID, resp.StatusCode)
+		// Read and print response body for more detailed error from API
+		bodyBytes, readErr := ioutil.ReadAll(resp.Body)
+		if readErr != nil {
+			return fmt.Errorf("failed to update CVE %s, received status code: %d, failed to read response body: %w", cve.CVEID, resp.StatusCode, readErr)
+		}
+		return fmt.Errorf("failed to update CVE %s, received status code: %d. Response body: %s", cve.CVEID, resp.StatusCode, string(bodyBytes))
 	}
 	return nil
 }
@@ -171,22 +191,24 @@ func (c *APIClient) updateCVE(targetConfig SourceConfig, imageTagId string, cve,
 // syncCve orchestrates the synchronization of CVE justifications.
 func (c *APIClient) syncCve(targetConfigs []SourceConfig, masterJustificationList JustificationList) {
 	for _, config := range targetConfigs {
+		// Use config.ImageName for logging and URL building
 		apiURL, err := c.buildImageAPIURL(config)
 		if err != nil {
-			fmt.Printf("Error building API URL for Edition=%s, Version=%s, Branch=%s: %v\n", config.Edition, config.Version, config.Branch, err)
+			fmt.Printf("Error building API URL for ImageName=%s, Edition=%s, Version=%s, Branch=%s: %v\n", config.ImageName, config.Edition, config.Version, config.Branch, err)
 			continue
 		}
 
-		fmt.Printf("\n--- Attempting to sync CVEs to: %s ---\n", apiURL)
+		fmt.Printf("\n--- Attempting to sync CVEs to: %s (Image: %s) ---\n", apiURL, config.ImageName)
 		cvesFromCurrentConfig, imageTagId, err := c.getJustificationsFromAPI(apiURL)
 		if err != nil {
-			fmt.Printf("Error fetching CVEs for Edition=%s, Version=%s, Branch=%s: %v\n", config.Edition, config.Version, config.Branch, err)
+			fmt.Printf("Error fetching CVEs for ImageName=%s, Edition=%s, Version=%s, Branch=%s: %v\n", config.ImageName, config.Edition, config.Version, config.Branch, err)
 			continue
 		}
-		fmt.Printf("Successfully fetched %d CVEs for Edition=%s, Version=%s, Branch=%s.\n", len(cvesFromCurrentConfig), config.Edition, config.Version, config.Branch)
+		fmt.Printf("Successfully fetched %d CVEs for ImageName=%s, Edition=%s, Version=%s, Branch=%s.\n", len(cvesFromCurrentConfig), config.ImageName, config.Edition, config.Version, config.Branch)
 
 		targetJustificationList := make(JustificationList)
 		for _, cve := range cvesFromCurrentConfig {
+			// Only consider CVEs that are not inherited and need justification
 			if cve.InheritsFrom == "" && cve.Status == "Needs Justification" {
 				targetJustificationList[cve.CVEID] = cve
 			}
@@ -194,134 +216,104 @@ func (c *APIClient) syncCve(targetConfigs []SourceConfig, masterJustificationLis
 
 		for id, cve := range targetJustificationList {
 			if existingCVE, exists := masterJustificationList[id]; exists {
-				fmt.Printf("Updating CVE %s for imageTagId: %s\n", id, imageTagId)
+				fmt.Printf("Found CVE %s in master list. Attempting to update for Image: %s.\n", id, config.ImageName)
 				if err := c.updateCVE(config, imageTagId, cve, existingCVE); err != nil {
-					fmt.Printf("Failed to update CVE %s: %v\n", id, err)
+					fmt.Printf("Failed to update CVE %s for Image: %s: %v\n", id, config.ImageName, err)
 				}
 			}
 		}
 	}
 }
 
+// loadConfigurationsFromFile reads and unmarshals the JSON configuration file.
+func loadConfigurationsFromFile(filePath string) (*Configurations, error) {
+	fileContent, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read configuration file %s: %w", filePath, err)
+	}
+
+	var configs Configurations
+	if err := json.Unmarshal(fileContent, &configs); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON configuration from %s: %w", filePath, err)
+	}
+	return &configs, nil
+}
+
+// getCookiesFromEnv retrieves cookies from environment variables.
+func getCookiesFromEnv() ([]*http.Cookie, error) {
+	var cookies []*http.Cookie
+
+	// Retrieve connect.sid cookie
+	connectSID := os.Getenv("CONNECT_SID_COOKIE")
+	if connectSID == "" {
+		return nil, fmt.Errorf("environment variable CONNECT_SID_COOKIE not set")
+	}
+	cookies = append(cookies, &http.Cookie{
+		Name:  "connect.sid",
+		Value: connectSID,
+	})
+
+	// Retrieve __Host-ironbank-vat-authservice-session-id-cookie
+	ironbankSessionID := os.Getenv("IRONBANK_SESSION_ID_COOKIE")
+	if ironbankSessionID == "" {
+		return nil, fmt.Errorf("environment variable IRONBANK_SESSION_ID_COOKIE not set")
+	}
+	cookies = append(cookies, &http.Cookie{
+		Name:  "__Host-ironbank-vat-authservice-session-id-cookie",
+		Value: ironbankSessionID,
+	})
+
+	return cookies, nil
+}
+
 func main() {
-	sourceConfigs := []SourceConfig{
-		{
-			Edition: "datacenter-app",
-			Version: "2025.3.0",
-			Branch:  "master",
-		},
-		{
-			Edition: "datacenter-app",
-			Version: "2025.1.2",
-			Branch:  "master",
-		},
-		{
-			Edition: "datacenter-app",
-			Version: "10.8.1",
-			Branch:  "master",
-		},
+	// Define a command-line flag for the configuration file path
+	configFilePath := flag.String("config", "configs.json", "Path to the JSON configuration file")
+	flag.Parse() // Parse the command-line arguments
+
+	// Load all configurations (source and target) from the JSON file
+	loadedConfigs, err := loadConfigurationsFromFile(*configFilePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading configurations: %v\n", err)
+		os.Exit(1)
 	}
 
-	targetConfigs := []SourceConfig{
-		{
-			Edition: "datacenter-search",
-			Version: "2025.1.2",
-			Branch:  "development",
-		},
-		{
-			Edition: "datacenter-app",
-			Version: "2025.1.2",
-			Branch:  "development",
-		},
-		{
-			Edition: "developer",
-			Version: "2025.1.2",
-			Branch:  "development",
-		},
-		{
-			Edition: "enterprise",
-			Version: "2025.1.2",
-			Branch:  "development",
-		},
-		{
-			Edition: "enterprise",
-			Version: "9.9.9",
-			Branch:  "master",
-		},
-		{
-			Edition: "datacenter-app",
-			Version: "9.9.9",
-			Branch:  "master",
-		},
-		{
-			Edition: "datacenter-search",
-			Version: "9.9.9",
-			Branch:  "master",
-		},
-		{
-			Edition: "developer",
-			Version: "9.9.8",
-			Branch:  "master",
-		},
-		{
-			Edition: "developer",
-			Version: "2025.3.1",
-			Branch:  "master",
-		},
-		{
-			Edition: "datacenter-search",
-			Version: "2025.3.1",
-			Branch:  "master",
-		},
-		{
-			Edition: "datacenter-app",
-			Version: "2025.3.1",
-			Branch:  "master",
-		},
-		{
-			Edition: "enterprise",
-			Version: "2025.3.1",
-			Branch:  "master",
-		},
-	}
+	sourceConfigs := loadedConfigs.SourceConfigs
+	targetConfigs := loadedConfigs.TargetConfigs
 
-	userCookies := []*http.Cookie{
-		{
-			Name:  "connect.sid",
-			Value: "s%3AqCkNvdN7h_O-OAgzGC9a1B7-AKb4gs3d.g%2F6CHjrCERuug5xD7PmCOKgrB%2Fxre7XdEUc28GHhxR4",
-		},
-		{
-			Name:  "__Host-ironbank-vat-authservice-session-id-cookie",
-			Value: "pelmuoyJxGcswQTkKBYTftnqd88X83WXSQ3zT5kF4MHYjIzb9wl0GKoWlaekjy2a",
-		},
+	// Get user cookies from environment variables
+	userCookies, err := getCookiesFromEnv()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting cookies from environment: %v\n", err)
+		os.Exit(1)
 	}
-
 
 	// API client setup
 	apiHost := "https://vat.dso.mil"
 	apiPath := "/api/images"
-	imageName := "sonarsource/sonarqube/sonarqube"
+	// imageName is no longer set here; it's part of each SourceConfig
 
-	client := NewAPIClient(apiHost, apiPath, imageName, userCookies)
+	// NewAPIClient call updated: imageName parameter removed
+	client := NewAPIClient(apiHost, apiPath, userCookies)
 
 	// Master Justification List - this will consolidate CVEs from all source configurations.
 	masterJustificationList := make(JustificationList)
 
 	// Process each source configuration
-	for _, config := range sourceConfigs {
-		apiURL, err := client.buildImageAPIURL(config)
+	for _, config := range sourceConfigs { // Loop now uses loaded sourceConfigs
+		apiURL, err := client.buildImageAPIURL(config) // ImageName is passed via config
 		if err != nil {
-			fmt.Printf("Error building API URL for Edition=%s, Version=%s, Branch=%s: %v\n", config.Edition, config.Version, config.Branch, err)
+			fmt.Printf("Error building API URL for ImageName=%s, Edition=%s, Version=%s, Branch=%s: %v\n", config.ImageName, config.Edition, config.Version, config.Branch, err)
 			continue
 		}
 
-		fmt.Printf("\n--- Attempting to fetch CVEs from: %s ---\n", apiURL)
+		fmt.Printf("\n--- Attempting to fetch CVEs from source: %s (Image: %s) ---\n", apiURL, config.ImageName)
 		cvesFromCurrentConfig, _, err := client.getJustificationsFromAPI(apiURL)
 		if err != nil {
-			fmt.Printf("Error fetching CVEs for Edition=%s, Version=%s, Branch=%s: %v\n", config.Edition, config.Version, config.Branch, err)
+			fmt.Printf("Error fetching CVEs for ImageName=%s, Edition=%s, Version=%s, Branch=%s: %v\n", config.ImageName, config.Edition, config.Version, config.Branch, err)
 			continue
 		}
-		fmt.Printf("Successfully fetched %d CVEs for Edition=%s, Version=%s, Branch=%s.\n", len(cvesFromCurrentConfig), config.Edition, config.Version, config.Branch)
+		fmt.Printf("Successfully fetched %d CVEs for ImageName=%s, Edition=%s, Version=%s, Branch=%s.\n", len(cvesFromCurrentConfig), config.ImageName, config.Edition, config.Version, config.Branch)
 
 		for _, cve := range cvesFromCurrentConfig {
 			if cve.InheritsFrom == "" && (cve.Status == "Verified" || cve.Status == "Justified") {
@@ -329,6 +321,8 @@ func main() {
 			}
 		}
 	}
+	fmt.Printf("\n--- Master Justification List created with %d unique CVEs. ---\n", len(masterJustificationList))
+
 
 	client.syncCve(targetConfigs, masterJustificationList)
 }

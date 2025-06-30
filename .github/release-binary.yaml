@@ -1,0 +1,76 @@
+name: Release Binary
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.20'
+
+      - name: Build for Linux
+        run: GOOS=linux GOARCH=amd64 go build -o bin/app-linux-amd64 .
+
+      - name: Build for macOS Intel
+        run: GOOS=darwin GOARCH=amd64 go build -o bin/app-darwin-amd64 .
+
+      - name: Build for macOS ARM
+        run: GOOS=darwin GOARCH=arm64 go build -o bin/app-darwin-arm64 .
+
+      - name: Build for Windows
+        run: GOOS=windows GOARCH=amd64 go build -o bin/app-windows-amd64.exe .
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ github.sha }}
+          release_name: Release ${{ github.sha }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Linux Binary
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: bin/app-linux-amd64
+          asset_name: app-linux-amd64
+          asset_content_type: application/octet-stream
+
+      - name: Upload macOS Intel Binary
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: bin/app-darwin-amd64
+          asset_name: app-darwin-amd64
+          asset_content_type: application/octet-stream
+
+      - name: Upload macOS ARM Binary
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: bin/app-darwin-arm64
+          asset_name: app-darwin-arm64
+          asset_content_type: application/octet-stream
+
+      - name: Upload Windows Binary
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: bin/app-windows-amd64.exe
+          asset_name: app-windows-amd64.exe
+          asset_content_type: application/octet-stream
