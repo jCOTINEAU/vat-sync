@@ -323,6 +323,5 @@ func main() {
 	}
 	fmt.Printf("\n--- Master Justification List created with %d unique CVEs. ---\n", len(masterJustificationList))
 
-
 	client.syncCve(targetConfigs, masterJustificationList)
 }
