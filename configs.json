@@ -23,25 +23,25 @@
     {
       "edition": "datacenter-search",
       "version": "2025.1.2",
-      "branch": "development",
+      "branch": "master",
       "image_name": "sonarsource/sonarqube/sonarqube"
     },
     {
       "edition": "datacenter-app",
       "version": "2025.1.2",
-      "branch": "development",
+      "branch": "master",
       "image_name": "sonarsource/sonarqube/sonarqube"
     },
     {
       "edition": "developer",
       "version": "2025.1.2",
-      "branch": "development",
+      "branch": "master",
       "image_name": "sonarsource/sonarqube/sonarqube"
     },
     {
       "edition": "enterprise",
       "version": "2025.1.2",
-      "branch": "development",
+      "branch": "master",
       "image_name": "sonarsource/sonarqube/sonarqube"
     },
     {
