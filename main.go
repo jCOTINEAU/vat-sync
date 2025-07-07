@@ -181,7 +181,7 @@ func (c *APIClient) updateCVE(targetConfig SourceConfig, imageTagId string, cve 
 }
 
 // syncCve orchestrates the synchronization of CVE justifications.
-func (c *APIClient) syncCve(targetConfigs []SourceConfig, sourceJustificationList JustificationList) {
+func (c *APIClient) syncCve(targetConfigs []SourceConfig, sourceJustificationList JustificationList, dryRunFlag bool) {
     for _, config := range targetConfigs {
 
         apiURL, err := c.buildImageAPIURL(config)
@@ -209,8 +209,10 @@ func (c *APIClient) syncCve(targetConfigs []SourceConfig, sourceJustificationLis
         for id, cve := range targetJustificationList {
             if existingCVE, exists := sourceJustificationList[id]; exists {
                 fmt.Printf("Found CVE %s in source list. Attempting to update for Image: %s.\n", id, config.ImageName)
-                if err := c.updateCVE(config, imageTagId, cve, existingCVE); err != nil {
-                    fmt.Printf("Failed to update CVE %s for Image: %s: %v\n", id, config.ImageName, err)
+                if dryRunFlag == false {
+                    if err := c.updateCVE(config, imageTagId, cve, existingCVE); err != nil {
+                        fmt.Printf("Failed to update CVE %s for Image: %s: %v\n", id, config.ImageName, err)
+                    }
                 }
             }
         }
@@ -261,6 +263,7 @@ func getCookiesFromEnv() ([]*http.Cookie, error) {
 func main() {
 
     configFilePath := flag.String("config", "configs.json", "Path to the JSON configuration file")
+    dryRunFlag := flag.Bool("dry-run", true, "By default, no changes are made, only printing info")
     flag.Parse()
 
     loadedConfigs, err := loadConfigurationsFromFile(*configFilePath)
@@ -285,8 +288,8 @@ func main() {
 
     sourceJustificationList := make(JustificationList)
 
-    for _, config := range sourceConfigs { // Loop now uses loaded sourceConfigs
-        apiURL, err := client.buildImageAPIURL(config) // ImageName is passed via config
+    for _, config := range sourceConfigs { 
+        apiURL, err := client.buildImageAPIURL(config)
         if err != nil {
             fmt.Printf("Error building API URL for ImageName=%s, Edition=%s, Version=%s, Branch=%s: %v\n", config.ImageName, config.Edition, config.Version, config.Branch, err)
             continue
@@ -308,5 +311,5 @@ func main() {
     }
     fmt.Printf("\n--- Source Justification List created with %d unique CVEs. ---\n", len(sourceJustificationList))
 
-    client.syncCve(targetConfigs, sourceJustificationList)
+    client.syncCve(targetConfigs, sourceJustificationList, *dryRunFlag)
 }
